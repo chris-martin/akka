@@ -165,13 +165,14 @@ object BackoffSupervisor {
  * with `Backoff.onStop`.
  */
 final class BackoffSupervisor(
-  val childProps: Props,
-  val childName:  String,
-  minBackoff:     FiniteDuration,
-  maxBackoff:     FiniteDuration,
-  val reset:      BackoffReset,
-  randomFactor:   Double,
-  strategy:       SupervisorStrategy)
+  val childProps:        Props,
+  val childName:         String,
+  minBackoff:            FiniteDuration,
+  maxBackoff:            FiniteDuration,
+  val reset:             BackoffReset,
+  randomFactor:          Double,
+  strategy:              SupervisorStrategy,
+  val replyWhileStopped: Option[Any])
   extends Actor with HandleBackoff {
 
   import BackoffSupervisor._
@@ -198,7 +199,7 @@ final class BackoffSupervisor(
     maxBackoff:         FiniteDuration,
     randomFactor:       Double,
     supervisorStrategy: SupervisorStrategy) =
-    this(childProps, childName, minBackoff, maxBackoff, AutoReset(minBackoff), randomFactor, supervisorStrategy)
+    this(childProps, childName, minBackoff, maxBackoff, AutoReset(minBackoff), randomFactor, supervisorStrategy, None)
 
   // for binary compatibility with 2.4.0
   def this(
@@ -224,6 +225,7 @@ private[akka] trait HandleBackoff { this: Actor ⇒
   def childProps: Props
   def childName: String
   def reset: BackoffReset
+  def replyWhileStopped: Option[Any]
 
   var child: Option[ActorRef] = None
   var restartCount = 0
@@ -267,9 +269,10 @@ private[akka] trait HandleBackoff { this: Actor ⇒
       // use the BackoffSupervisor as sender
       context.parent ! msg
 
-    case msg ⇒ child match {
-      case Some(c) ⇒ c.forward(msg)
-      case None    ⇒ context.system.deadLetters.forward(msg)
+    case msg ⇒ (child, replyWhileStopped) match {
+      case (Some(c), _) ⇒ c.forward(msg)
+      case (_, Some(r)) ⇒ sender ! r
+      case _            ⇒ context.system.deadLetters.forward(msg)
     }
   }
 }
